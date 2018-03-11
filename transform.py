@@ -1,11 +1,13 @@
+#!/usr/bin/env python3
 import wave, struct
 import matplotlib.pyplot as plt
 import numpy as np
+from sys import argv
 from matplotlib.animation import FuncAnimation
 
-wav_file = wave.open("a2002011001-e02.wav")
-#wav_file = wave.open("SineWaveMinus16.wav")
+wav_file = wave.open(argv[1])
 
+# read metadata
 W = wav_file.getsampwidth()
 print(W*8, "bits")
 Hz = wav_file.getframerate()
@@ -15,7 +17,7 @@ print(Ch, "ch")
 N = wav_file.getnframes()
 print(N, "frames")
 
-# read 20000 frames data
+# read 1 second of data
 n_samples = Hz
 wav_bytes = wav_file.readframes(n_samples)
 
@@ -36,41 +38,35 @@ fmt = {
 }
 wav_samples = [struct.unpack(fmt[W], frame)[0] for frame in wav_frames]
 wav_samples = [sample + (1<<(8*(W-1))) for sample in wav_samples]
-#print(wav_samples)
 
+# plot samples
 plt.plot(np.linspace(0,1,len(wav_samples)), wav_samples)
+plt.ylabel("Sample")
+plt.xlabel("Time (s)")
+plt.title("Original signal")
 plt.show()
 
-# shift up to unsigned
-
-
-print(wav_samples)
-
-fig, ax = plt.subplots()
+# animate samples wrapped around origin at different frequencies
+fig, ax = plt.subplots(1,1,subplot_kw=dict(projection='polar'))
 xd, yd = [], []
-
-wrap_hz = 1
-
-ln, = plt.polar(np.linspace(0, 2*np.pi, len(wav_samples)), wav_samples)
-
+ln, = plt.polar(np.linspace(0, 2*np.pi, n_samples), wav_samples)
 
 def init():
-    #ax.set_xlim(0, 2*np.pi)
-    #ax.set_ylim(-1, 1)
-    return ln,
+	return ln,
 
 def update(frame):
-    xd = np.linspace(0, 2*np.pi*frame, len(wav_samples))
-    yd = wav_samples
-    ln.set_data(xd, yd)
-    return ln,
+	xd = np.linspace(0, 2*np.pi*frame, n_samples)
+	yd = wav_samples
+	ln.set_data(xd, yd)
+	ax.set_ylim([0,1<<(W*8)])
+	plt.title("%.2f Hz" % frame)
+	return ln,
 
-ani = FuncAnimation(fig, update, frames=np.linspace(1,10,20),
-                    init_func=init)
-
+ani = FuncAnimation(fig, update, frames=np.linspace(1,100,1000), init_func=init)
 plt.show()
 
-transform_samples = 2000
+# compute transform
+transform_samples = 1500
 
 transform_1 = np.zeros(transform_samples)
 transform_2 = np.zeros(transform_samples)
@@ -78,20 +74,13 @@ transform_2 = np.zeros(transform_samples)
 radiuses = np.array(wav_samples)
 
 for i in range(transform_samples):
-	print(i)
-	thetas = np.linspace(0, 2*np.pi*i, len(wav_samples))
+	thetas = np.linspace(0, 2*np.pi*i, n_samples)
 
-	sines = np.sin(thetas)
-	cosines = np.cos(thetas)
-	# which is imaginary part?
-	sines = np.multiply(sines, radiuses)
-	cosines = np.multiply(cosines, radiuses)
+	transform_1[i] = np.average(np.multiply(np.sin(thetas), radiuses))
+	transform_2[i] = np.average(np.multiply(np.cos(thetas), radiuses))
 
-	transform_1[i] = np.average(sines)
-	transform_2[i] = np.average(cosines)
-
-plt.plot(np.linspace(1,2000,2000), transform_1, transform_2)
+plt.plot(np.linspace(1,1500,1500), transform_1, transform_2)
+plt.xlabel("Hz")
+plt.ylabel("Intensity")
+plt.title("Fourier transform")
 plt.show()
-
-
-
