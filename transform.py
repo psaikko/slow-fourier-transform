@@ -2,6 +2,7 @@
 import wave, struct
 import matplotlib.pyplot as plt
 import numpy as np
+from time import perf_counter
 from sys import argv
 from matplotlib.animation import FuncAnimation
 
@@ -37,15 +38,14 @@ def read_wav(filename):
 		2: "<h",
 		4: "<i"
 	}
-	data = [struct.unpack(fmt[W], frame)[0] for frame in data]
-	#data = [sample + (1<<(8*(W-1))) for sample in data]
+	data = np.array([struct.unpack(fmt[W], frame)[0] for frame in data])
 
 	return data, W*8, Hz
 
 wav_samples, sample_bits, sample_rate = read_wav(argv[1])
 
-fourier_min = 1
-fourier_max = 1000
+# downsample to 8khz for better performance
+wav_samples = wav_samples[::(sample_rate // 8000)]
 
 # plot samples
 plt.plot(np.linspace(0,1,len(wav_samples)), wav_samples)
@@ -54,39 +54,39 @@ plt.xlabel("Time (s)")
 plt.title("Original signal")
 plt.show()
 
-# animate samples wrapped around origin at different frequencies
+# create subplots for animation
+min_hz = 400
+max_hz = 440
+
 fig = plt.figure()
 scatter_ax = fig.add_subplot(121, projection='polar')
-scatter_ax.set_ylim([-(1<<(sample_bits-1)), (1<<(sample_bits-1))])
-scatter_xd, scatter_yd = [], []
-scatter_ax.scatter(scatter_xd, scatter_yd)
+scatter_xd = np.linspace(0, 2*np.pi*1, len(wav_samples))
+scatter_yd = wav_samples
+scatter_ax.scatter(scatter_xd, scatter_yd, marker='.', linewidth=0, s=10)
 
 line_ax = fig.add_subplot(122)
-line_ax.set_xlim([fourier_min, fourier_max])
 line_xd, line_yd = [], []
 ln, = line_ax.plot(line_xd, line_yd, color='red')
 
-
-def init():
-	scatter_ax.set_ylim([-(1<<(sample_bits-1)), (1<<(sample_bits-1))])
-	#return ln,
+# animate samples wrapped around origin at different frequencies
+def init():	
+	scatter_ax.set_ylim([-(1<<(sample_bits-2)), (1<<(sample_bits-2))])
+	line_ax.set_xlim([min_hz, max_hz])
 
 def update(frame):
 	scatter_xd = np.linspace(0, 2*np.pi*frame, len(wav_samples))
-	scatter_yd = wav_samples
 
 	transform_sin = np.average(np.multiply(np.sin(scatter_xd), scatter_yd))
 	transform_cos = np.average(np.multiply(np.cos(scatter_xd), scatter_yd))
 
 	scatter_ax.clear()
+	scatter_ax.set_ylim([-(1<<(sample_bits-2)), (1<<(sample_bits-2))])
 	scatter_ax.scatter(scatter_xd, scatter_yd, marker='.', linewidth=0, s=10)
-
 	scatter_ax.scatter(
 		[np.arctan(transform_sin/transform_cos)],
-		[(np.sqrt(transform_sin**2 + transform_cos**2) * 20 - (1 << (sample_bits-1)))],
+		[(np.sqrt(transform_sin**2 + transform_cos**2) * 20 - (1 << (sample_bits-2)))],
 		color='red', s=50)
 
-	scatter_ax.set_ylim([-(1<<(sample_bits-1)), (1<<(sample_bits-1))])
 	scatter_ax.set_title("%.2f Hz" % frame)
 
 	if not len(line_xd) or frame > line_xd[-1]:
@@ -94,11 +94,15 @@ def update(frame):
 		line_yd.append(transform_cos)
 
 	line_ax.set_ylim([-1000, 1000])
-
 	ln.set_data(line_xd, line_yd)
-	#return ln,
 
-ani = FuncAnimation(fig, update, frames=np.linspace(fourier_min,fourier_max,1000), init_func=init)
+ani = FuncAnimation(fig, 
+	update, 
+	frames=np.linspace(min_hz,max_hz,1000), 
+	interval=50,
+	repeat=False,
+	blit=False,
+	init_func=init)
 plt.show()
 
 # compute transform
@@ -107,15 +111,17 @@ transform_samples = 1500
 transform_1 = np.zeros(transform_samples)
 transform_2 = np.zeros(transform_samples)
 
-radiuses = np.array(wav_samples)
+hz_range = np.linspace(min_hz, max_hz, transform_samples)
 
-for i in range(transform_samples):
-	thetas = np.linspace(0, 2*np.pi*i, len(wav_samples))
+i = 0
+for hz in hz_range:
+	thetas = np.linspace(0, 2*np.pi*hz, len(wav_samples))
+	transform_1[i] = np.average(np.multiply(np.sin(thetas), wav_samples))
+	transform_2[i] = np.average(np.multiply(np.cos(thetas), wav_samples))
+	i += 1
 
-	transform_1[i] = np.average(np.multiply(np.sin(thetas), radiuses))
-	transform_2[i] = np.average(np.multiply(np.cos(thetas), radiuses))
-
-plt.plot(np.linspace(1,1500,1500), transform_1, transform_2)
+plt.plot()
+plt.plot(hz_range, transform_1, 'r', hz_range, transform_2, 'b')
 plt.xlabel("Hz")
 plt.ylabel("Intensity")
 plt.title("Fourier transform")
