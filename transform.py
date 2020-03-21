@@ -5,6 +5,7 @@ import numpy as np
 from time import perf_counter
 from sys import argv
 from matplotlib.animation import FuncAnimation
+from matplotlib import animation
 
 def read_wav(filename):
 	wav_file = wave.open(filename)
@@ -55,10 +56,10 @@ plt.title("Original signal")
 plt.show()
 
 # create subplots for animation
-min_hz = 400
-max_hz = 440
+min_hz = 1
+max_hz = 1000
 
-fig = plt.figure()
+fig = plt.figure(figsize=(10,6))
 scatter_ax = fig.add_subplot(121, projection='polar')
 scatter_xd = np.linspace(0, 2*np.pi*1, len(wav_samples))
 scatter_yd = wav_samples
@@ -74,26 +75,34 @@ def init():
 	line_ax.set_xlim([min_hz, max_hz])
 
 def update(frame):
+	# Scale the x values to wind the wav samples around the plot $(frame) times
 	scatter_xd = np.linspace(0, 2*np.pi*frame, len(wav_samples))
-
-	transform_sin = np.average(np.multiply(np.sin(scatter_xd), scatter_yd))
-	transform_cos = np.average(np.multiply(np.cos(scatter_xd), scatter_yd))
-
 	scatter_ax.clear()
 	scatter_ax.set_ylim([-(1<<(sample_bits-2)), (1<<(sample_bits-2))])
 	scatter_ax.scatter(scatter_xd, scatter_yd, marker='.', linewidth=0, s=10)
+
+	# Compute a "center of mass" for the plotted points
+	transform_sin = np.average(np.multiply(np.sin(scatter_xd), scatter_yd+(1<<(sample_bits-2))))
+	transform_cos = np.average(np.multiply(np.cos(scatter_xd), scatter_yd+(1<<(sample_bits-2))))
+	# Transform back to polar coordinates
+	theta = np.arctan(transform_sin / transform_cos)
+	if transform_cos < 0: theta += np.pi
+	length = np.sqrt(transform_sin**2 + transform_cos**2)
+	plot_scale = 20
+	plot_offset = 1 << (sample_bits-2)
 	scatter_ax.scatter(
-		[np.arctan(transform_sin/transform_cos)],
-		[(np.sqrt(transform_sin**2 + transform_cos**2) * 20 - (1 << (sample_bits-2)))],
+		[theta], [length * plot_scale - plot_offset],
 		color='red', s=50)
 
 	scatter_ax.set_title("%.2f Hz" % frame)
+	scatter_ax.legend(["wav samples","\"center of mass\""], loc="upper right")
 
 	if not len(line_xd) or frame > line_xd[-1]:
 		line_xd.append(frame)
 		line_yd.append(transform_cos)
 
 	line_ax.set_ylim([-1000, 1000])
+	line_ax.legend(["x position of center"])
 	ln.set_data(line_xd, line_yd)
 
 ani = FuncAnimation(fig, 
@@ -103,26 +112,31 @@ ani = FuncAnimation(fig,
 	repeat=False,
 	blit=False,
 	init_func=init)
+
+writer = animation.ImageMagickFileWriter(fps=10)
+#ani.save('im.gif',writer=writer,dpi=50)
 plt.show()
+
 
 # compute transform
 transform_samples = 1500
 
-transform_1 = np.zeros(transform_samples)
-transform_2 = np.zeros(transform_samples)
+transform_real = np.zeros(transform_samples)
+transform_imag = np.zeros(transform_samples)
 
-hz_range = np.linspace(min_hz, max_hz, transform_samples)
+hz_range = np.linspace(1, 1000, transform_samples)
 
 i = 0
 for hz in hz_range:
 	thetas = np.linspace(0, 2*np.pi*hz, len(wav_samples))
-	transform_1[i] = np.average(np.multiply(np.sin(thetas), wav_samples))
-	transform_2[i] = np.average(np.multiply(np.cos(thetas), wav_samples))
+	transform_imag[i] = np.average(np.multiply(np.sin(thetas), wav_samples))
+	transform_real[i] = np.average(np.multiply(np.cos(thetas), wav_samples))
 	i += 1
 
 plt.plot()
-plt.plot(hz_range, transform_1, 'r', hz_range, transform_2, 'b')
+plt.plot(hz_range, transform_real, 'r', hz_range, transform_imag, 'b')
 plt.xlabel("Hz")
 plt.ylabel("Intensity")
-plt.title("Fourier transform")
+plt.title("\"Fourier transform\"")
+plt.legend(['real part','imaginary part'])
 plt.show()
